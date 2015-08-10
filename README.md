@@ -14,11 +14,14 @@ It also detects the peaks in the signal and computes the heart rate in beats per
 # Versions
 
 - v1.0: First working version
+- v1.1:
+	- Removed debug data from the main display
+	- Added more display buffers for a smoother display
+	- Displays now a continuous waveform (not just the data points)
 
 # Known issues
 
-- Timer 5 trigger to ADC doesn't work
-- Display flickers
+- Timer 5 trigger to ADC doesn't work (Timing done manually using Timer 2)
 
 # Future work
 

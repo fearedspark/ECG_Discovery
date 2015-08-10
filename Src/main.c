@@ -59,8 +59,7 @@ SDRAM_HandleTypeDef hsdram1;
 /* Private variables ---------------------------------------------------------*/
 FMC_SDRAM_CommandTypeDef command;
 
-uint32_t * Display_layer0_buffer0 = (uint32_t *) DISPLAY_LAYER0_BUFFER0_ADDR;
-uint32_t * Display_layer0_buffer1 = (uint32_t *) DISPLAY_LAYER0_BUFFER1_ADDR;
+uint32_t * Display_layer0[] = {(uint32_t *) DISPLAY_LAYER0_BUFFER0_ADDR, (uint32_t *) DISPLAY_LAYER0_BUFFER1_ADDR, (uint32_t *) DISPLAY_LAYER0_BUFFER2_ADDR, (uint32_t *) DISPLAY_LAYER0_BUFFER3_ADDR, (uint32_t *) DISPLAY_LAYER0_BUFFER4_ADDR};
 uint32_t * Display_layer1 = (uint32_t *) DISPLAY_LAYER1_ADDR;
 
 uint8_t current_ecg_display_buffer = 0;
@@ -85,7 +84,8 @@ static void MX_TIM6_Init(void);
 //#######################################################################################################################################################################
 static void SDRAM_Init(void); //VERY IMPORTANT: if you update the project using the STM32Cube MX software, make sure this line is added after the MX_FMC_Init() call!!!!
 //#######################################################################################################################################################################
-void draw_ecg_data(uint8_t buffer_id);
+void draw_ecg_data(uint32_t * buffer);
+void draw_ecg_line(int x0, int y0, int x1, int y1, uint32_t color, uint32_t * buffer);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -131,7 +131,7 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
   for(y = 0; y < 240*350; y++)
-      Display_layer0_buffer0[y] = Display_layer0_buffer1[y] = 0;
+      Display_layer0[0][y] = Display_layer0[1][y] = Display_layer0[2][y] = Display_layer0[3][y] = 0;
   for(y = 0; y < 272*480; y++)
       Display_layer1[y] = 0;
   initTextBuffer(Display_layer1, 480, 272, 0, 0, Arial12x12, TFT_WHITE, 0x00000001);
@@ -176,8 +176,9 @@ int main(void)
       {
           if(refresh_delay == 0)
           {
-              draw_ecg_data(++current_ecg_display_buffer);
-              HAL_LTDC_SetAddress(&hltdc, (uint32_t) ((current_ecg_display_buffer)?Display_layer0_buffer1:Display_layer0_buffer0), 0);
+              draw_ecg_data(Display_layer0[++current_ecg_display_buffer]);
+              HAL_LTDC_SetAddress(&hltdc, (uint32_t) (Display_layer0[current_ecg_display_buffer]), 0);
+              current_ecg_display_buffer = (current_ecg_display_buffer + 1) % 4;
           }
           refresh_delay++;
           refresh_delay %= 6;
@@ -374,7 +375,7 @@ void MX_LTDC_Init(void)
   pLayerCfg1.Alpha0 = 0;
   pLayerCfg1.BlendingFactor1 = LTDC_BLENDING_FACTOR1_PAxCA;
   pLayerCfg1.BlendingFactor2 = LTDC_BLENDING_FACTOR2_PAxCA;
-  pLayerCfg1.FBStartAdress = 0xC0100000;
+  pLayerCfg1.FBStartAdress = 0xC0200000;
   pLayerCfg1.ImageWidth = 480;
   pLayerCfg1.ImageHeight = 272;
   pLayerCfg1.Backcolor.Blue = 0;
@@ -1035,11 +1036,10 @@ static void SDRAM_Init()
 
 }
 
-void draw_ecg_data(uint8_t buffer_id)
+void draw_ecg_data(uint32_t * buffer)
 {
-    int x, y;
+    int x, y, y_previous;
     int current_ecg_position_disp;
-    uint32_t * buffer = (buffer_id)?Display_layer0_buffer1:Display_layer0_buffer0;
     //while(DMA2D->CR & 0x00000001);
     DMA2D->CR = 0x00030000;
     DMA2D->OCOLR = 0x00000000;
@@ -1052,18 +1052,30 @@ void draw_ecg_data(uint8_t buffer_id)
     current_ecg_position_disp = (current_ecg_position - 1)%350;
     for(x = 349; x >= 0; x--)
     {
-        y = (1.0f-threshold) * 220;
-        buffer[(y + 10)*350 + x] = TFT_BLUE;
-        y = (1.0f-threshold/2.0f) * 220;
-        buffer[(y + 10)*350 + x] = 0xFF00003F;
-        y = (1.0f-ecg_display_avg[(current_ecg_position_disp+x)%350])*220;
+        y = (1.0f-ecg_display_values[(current_ecg_position_disp+x)%350]-0.3f)*220;
+        if(x < 349)
+        {
+            draw_ecg_line(x, y, x+1, y_previous, TFT_RED, buffer);
+        }
+        y_previous = y;
+    }
+}
+
+void draw_ecg_line(int x0, int y0, int x1, int y1, uint32_t color, uint32_t * buffer)
+{
+    int orig_x = (x0 < x1)?x0:x1, orig_y = (x0 < x1)?y0:y1, dest_x = (x0 < x1)?x1:x0, dest_y = (x0 < x1)?y1:y0;
+    int dx = dest_x - orig_x, dy = dest_y - orig_y;
+    int x = orig_x, y = orig_y;
+    float dist = sqrt(dx*dx + dy*dy), i;
+    for(i = 0.0f; i <= 1.0f; i+= 1.0f/dist)
+    {
+        x = orig_x + i*(float)dx;
+        y = orig_y + i*(float)dy;
+        if(x > 349) x = 349;
+        if(x < 0) x = 0;
+        if(y > 239) y = 239;
         if(y < 0) y = 0;
-        if(y >= 220) y = 219;
-        buffer[(y + 10)*350 + x] = TFT_GREEN;
-        y = (1.0f-ecg_display_values[(current_ecg_position_disp+x)%350])*220;
-        if(y < 0) y = 0;
-        if(y >= 220) y = 219;
-        buffer[(y + 10)*350 + x] = TFT_RED;
+        buffer[y*350 + x] = color;
     }
 }
 /* USER CODE END 4 */

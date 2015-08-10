@@ -16,15 +16,11 @@
 #define ResetTim6Flag() TIM6->SR &= 0xFFFFFFFE
 
 extern float ecg_display_values[350];
-extern float ecg_display_avg[350];
 extern uint16_t current_ecg_position;
 
 extern uint16_t ecg_refresh_request;
 extern uint8_t bpm_refresh_request;
-
 extern uint32_t beat_pulse_period;
-
-extern float threshold;
 
 void initEcg(void);
 
